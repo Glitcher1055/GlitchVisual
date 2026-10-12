@@ -14,11 +14,10 @@ public final class GlitchVisual implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             boolean down = GLFW.glfwGetKey(
-                    client.getWindow().getHandle(),
-                    GLFW.GLFW_KEY_RIGHT_SHIFT
+                client.getWindow().getHandle(),
+                GLFW.GLFW_KEY_RIGHT_SHIFT
             ) == GLFW.GLFW_PRESS;
 
             if (down && !rightShiftWasDown
@@ -28,20 +27,5 @@ public final class GlitchVisual implements ClientModInitializer {
 
             rightShiftWasDown = down;
         });
-
-        ScreenEvents.AFTER_INIT.register(
-                (client, screen, width, height) -> {
-                    if (screen instanceof GameMenuScreen) {
-                        screen.addDrawableChild(
-                                ButtonWidget.builder(
-                                        Text.literal("GlitchVisual"),
-                                        button -> client.setScreen(
-                                                new GlitchVisualScreen()
-                                        )
-                                ).dimensions(8, 8, 110, 20).build()
-                        );
-                    }
-                }
-        );
     }
 }
