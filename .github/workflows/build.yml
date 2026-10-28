@@ -1,32 +1,54 @@
 name: build
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-  workflow_dispatch:
-
+on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
+        with: { distribution: temurin, java-version: 21 }
+      - name: Find project
+        run: |
+          if [ -z "$(find . -name settings.gradle -not -path './.git/*' | head -n1)" ]; then
+            Z=$(find . -iname '*.zip' -not -path './.git/*' | head -n1)
+            echo "unpacking $Z"
+            mkdir -p unpacked && unzip -q -o "$Z" -d unpacked
+          fi
+          F=$(find . -name settings.gradle -not -path './.git/*' | head -n1)
+          if [ -z "$F" ]; then echo "settings.gradle not found anywhere in the repo"; ls -R | head -50; exit 1; fi
+          echo "PROJECT_DIR=$(dirname "$F")" >> $GITHUB_ENV
+          echo "project: $(dirname "$F")"
+      - name: Download ViaFabricPlus 4.4.15 (unmodified)
+        run: |
+          cd "$PROJECT_DIR"
+          mkdir -p libs
+          if ls libs/ViaFabricPlus-*.jar >/dev/null 2>&1; then echo "already in repo"; exit 0; fi
+          URL=$(curl -sf 'https://api.modrinth.com/v2/project/viafabricplus/version' -G \
+            --data-urlencode 'loaders=["fabric"]' --data-urlencode 'game_versions=["1.21.11"]' \
+            | jq -r '[.[] | select(.version_number | startswith("4.4.15"))][0].files[] | select(.primary) | .url')
+          curl -sfL "$URL" -o libs/ViaFabricPlus-4.4.15.jar
+      - name: Download YetAnotherConfigLib + Spatial GUI (unmodified, only if not in libs/)
+        run: |
+          cd "$PROJECT_DIR"
+          mkdir -p libs
+          get() {
+            if ls libs/$2-*.jar >/dev/null 2>&1; then echo "$2 already in repo"; return 0; fi
+            URL=$(curl -sf "https://api.modrinth.com/v2/project/$1/version" -G \
+              --data-urlencode 'loaders=["fabric"]' --data-urlencode 'game_versions=["1.21.11"]' \
+              | jq -r --arg v "$3" '[.[] | select(.version_number | startswith($v))][0].files[] | select(.primary) | .url')
+            curl -sfL "$URL" -o "libs/$2-$3.jar"
+          }
+          get yacl YetAnotherConfigLib 3.8.2
+          get spatial-gui SpatialGUI 1.8
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.14.3
-
+        with: { gradle-version: 9.2.0 }
       - name: Build
-        run: gradle build --no-daemon
-
-      - name: Upload jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: shrine
-          path: build/libs/*.jar
-          if-no-files-found: error
+        run: cd "$PROJECT_DIR" && gradle build
+      - name: Pick the mod jar
+        run: |
+          mkdir -p out
+          cp "$PROJECT_DIR"/build/libs/*.jar out/
+          rm -f out/*-sources.jar out/*-dev.jar
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with: { name: shrine, path: out/*.jar }
